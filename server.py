@@ -4,61 +4,72 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Инициализация базы данных
+# Инициализация БД
 def init_db():
     with sqlite3.connect("scores.db") as conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS scores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT,
-                buyer TEXT,
-                score INTEGER,
-                money INTEGER,
-                time TEXT
-            )
+        CREATE TABLE IF NOT EXISTS scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            buyer TEXT,
+            score INTEGER,
+            money INTEGER,
+            time TEXT
+        )
         """)
 
-init_db()
-
-# POST-запрос: сохранить результат
+# Отправка результата игрока
 @app.route("/submit", methods=["POST"])
 def submit_score():
     data = request.json
+    now = datetime.now().isoformat()
+
     with sqlite3.connect("scores.db") as conn:
-        conn.execute("""
-            INSERT INTO scores (username, buyer, score, money, time)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            data["username"],
-            data["buyer"],
-            data["score"],
-            data["money"],
-            datetime.now().isoformat()
-        ))
+        cur = conn.cursor()
+
+        # Проверка: игрок уже есть?
+        cur.execute("SELECT score, money FROM scores WHERE username = ?", (data["username"],))
+        existing = cur.fetchone()
+
+        if existing:
+            old_score, old_money = existing
+            new_score = max(old_score, data["score"])
+            new_money = old_money + data["money"]
+
+            cur.execute("""
+                UPDATE scores
+                SET buyer = ?, score = ?, money = ?, time = ?
+                WHERE username = ?
+            """, (data["buyer"], new_score, new_money, now, data["username"]))
+
+        else:
+            cur.execute("""
+                INSERT INTO scores (username, buyer, score, money, time)
+                VALUES (?, ?, ?, ?, ?)
+            """, (data["username"], data["buyer"], data["score"], data["money"], now))
+
     return {"status": "ok"}, 200
 
-# GET-запрос: получить топ-10 по доходу
+# Получить топ-10 по деньгам
 @app.route("/top", methods=["GET"])
 def get_top():
     with sqlite3.connect("scores.db") as conn:
         result = conn.execute("""
-            SELECT username, money FROM scores
+            SELECT username, money
+            FROM scores
             ORDER BY money DESC
             LIMIT 10
         """).fetchall()
     return jsonify(result)
 
-# Главная страница с таблицей игроков
+# Главная страница с таблицей
 @app.route("/")
 def index():
     with sqlite3.connect("scores.db") as conn:
         result = conn.execute("""
-            SELECT username,
-                   MAX(money) AS best_money,
-                   MAX(score) AS best_score
+            SELECT username, money, score
             FROM scores
-            GROUP BY username
-            ORDER BY best_money DESC
+            ORDER BY money DESC
         """).fetchall()
 
     html = """
@@ -104,11 +115,11 @@ def index():
         <h1>Miga: Рыбный Бизнес</h1>
         <h2>Таблица рекордов</h2>
         <table>
-            <tr><th>№</th><th>Игрок</th><th>Макс. доход (₽)</th><th>Макс. рыбы</th></tr>
+            <tr><th>№</th><th>Игрок</th><th>Всего заработано (₽)</th><th>Макс. рыбы</th></tr>
     """
 
-    for i, (username, best_money, best_score) in enumerate(result, 1):
-        html += f"<tr><td>{i}</td><td>{username}</td><td>{best_money}</td><td>{best_score}</td></tr>"
+    for i, (username, money, score) in enumerate(result, 1):
+        html += f"<tr><td>{i}</td><td>{username}</td><td>{money}</td><td>{score}</td></tr>"
 
     html += """
         </table>
