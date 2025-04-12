@@ -18,6 +18,8 @@ def init_db():
             )
         """)
 
+init_db()
+
 # POST-запрос: сохранить результат
 @app.route("/submit", methods=["POST"])
 def submit_score():
