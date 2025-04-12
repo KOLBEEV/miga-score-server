@@ -18,6 +18,8 @@ def init_db():
         )
         """)
 
+init_db()
+
 # Отправка результата игрока
 @app.route("/submit", methods=["POST"])
 def submit_score():
