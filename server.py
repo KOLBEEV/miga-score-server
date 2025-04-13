@@ -10,7 +10,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # Инициализация БД
 def init_db():
-    with sqlite3.connect("scores.db") as conn:
+    with psycopg2.connect(DATABASE_URL) as conn:
         conn.execute("""
         CREATE TABLE IF NOT EXISTS scores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
