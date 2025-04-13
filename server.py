@@ -3,7 +3,6 @@ import psycopg2
 from flask import Flask, request, jsonify
 from datetime import datetime
 
-
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -11,16 +10,18 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # Инициализация БД
 def init_db():
     with psycopg2.connect(DATABASE_URL) as conn:
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            buyer TEXT,
-            score INTEGER,
-            money INTEGER,
-            time TEXT
-        )
-        """)
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS scores (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE,
+                    buyer TEXT,
+                    score INTEGER,
+                    money INTEGER,
+                    time TEXT
+                )
+            """)
+        conn.commit()
 
 init_db()
 
@@ -30,53 +31,55 @@ def submit_score():
     data = request.json
     now = datetime.now().isoformat()
 
-    with sqlite3.connect("scores.db") as conn:
-        cur = conn.cursor()
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT score, money FROM scores WHERE username = %s", (data["username"],))
+            existing = cur.fetchone()
 
-        # Проверка: игрок уже есть?
-        cur.execute("SELECT score, money FROM scores WHERE username = ?", (data["username"],))
-        existing = cur.fetchone()
+            if existing:
+                old_score, old_money = existing
+                new_score = max(old_score, data["score"])
+                new_money = old_money + data["money"]
 
-        if existing:
-            old_score, old_money = existing
-            new_score = max(old_score, data["score"])
-            new_money = old_money + data["money"]
-
-            cur.execute("""
-                UPDATE scores
-                SET buyer = ?, score = ?, money = ?, time = ?
-                WHERE username = ?
-            """, (data["buyer"], new_score, new_money, now, data["username"]))
-
-        else:
-            cur.execute("""
-                INSERT INTO scores (username, buyer, score, money, time)
-                VALUES (?, ?, ?, ?, ?)
-            """, (data["username"], data["buyer"], data["score"], data["money"], now))
+                cur.execute("""
+                    UPDATE scores
+                    SET buyer = %s, score = %s, money = %s, time = %s
+                    WHERE username = %s
+                """, (data["buyer"], new_score, new_money, now, data["username"]))
+            else:
+                cur.execute("""
+                    INSERT INTO scores (username, buyer, score, money, time)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (data["username"], data["buyer"], data["score"], data["money"], now))
+        conn.commit()
 
     return {"status": "ok"}, 200
 
 # Получить топ-10 по деньгам
 @app.route("/top", methods=["GET"])
 def get_top():
-    with sqlite3.connect("scores.db") as conn:
-        result = conn.execute("""
-            SELECT username, money
-            FROM scores
-            ORDER BY money DESC
-            LIMIT 10
-        """).fetchall()
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT username, money
+                FROM scores
+                ORDER BY money DESC
+                LIMIT 10
+            """)
+            result = cur.fetchall()
     return jsonify(result)
 
 # Главная страница с таблицей
 @app.route("/")
 def index():
-    with sqlite3.connect("scores.db") as conn:
-        result = conn.execute("""
-            SELECT username, money, score
-            FROM scores
-            ORDER BY money DESC
-        """).fetchall()
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT username, money, score
+                FROM scores
+                ORDER BY money DESC
+            """)
+            result = cur.fetchall()
 
     html = """
     <!DOCTYPE html>
