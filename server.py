@@ -1,8 +1,12 @@
+import os
+import psycopg2
 from flask import Flask, request, jsonify
-import sqlite3
 from datetime import datetime
 
+
 app = Flask(__name__)
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # Инициализация БД
 def init_db():
